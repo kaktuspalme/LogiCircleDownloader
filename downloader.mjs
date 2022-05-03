@@ -4,14 +4,19 @@ import fetch from 'node-fetch';
 import { Low, JSONFile } from 'lowdb';
 import path from 'path';
 
+let db = {};
+
+const readConfig = async () => {
+    db = new Low(new JSONFile('config.json'));
+    await db.read();
+    db.data = db.data || {
+        refresh_token: '',
+        code_verifier: '',
+        download_directory: ''
+    };
+};
+
 const authorize = async () => {
-   const db = new Low(new JSONFile('auth.json'));
-   await db.read();
-   db.data = db.data || {
-            refresh_token: '',            
-            code_verifier: ''
-        };        
-        
     var refreshToken = db.data.refresh_token;
     var codeVerifier = db.data.code_verifier;
     
@@ -39,7 +44,7 @@ const authorize = async () => {
     var json = JSON.parse(text);
     
      
-    db.data.refresh_token = json.refresh_token;    
+    db.data.refresh_token = json.refresh_token;
     await db.write();
     
     return json.access_token;
@@ -114,12 +119,13 @@ const save_stream = async(filepath, stream) => {
 };
 
 const run = async() => {
-    const download_directory ='videos';
-    const db = new Low(new JSONFile('db.json'));
-    await db.read();
-    
-    db.data = db.data || { downloadedActivities: [] };    
 
+    const downloadDb = new Low(new JSONFile('db.json'));
+    await downloadDb.read();
+
+    downloadDb.data = downloadDb.data || { downloadedActivities: [] };
+
+    await readConfig();
     let sessionCookie = await authorize();
 
     let accessories = await get_accessories(sessionCookie);
@@ -131,13 +137,13 @@ const run = async() => {
         for(var j = 0; j < activities.length; j++) {
             let activity = activities[j];
 
-            let found = db.data.downloadedActivities.indexOf(activity.activityId) > -1;
+            let found = downloadDb.data.downloadedActivities.indexOf(activity.activityId) > -1;
 
             if(!found) {
 
                 let [filename, stream] = await download_activity(accessory, activity, sessionCookie);
 
-                let dir = download_directory;
+                let dir = db.data.download_directory;
                                 
                 let pathWithDevice = path.join(dir, accessory.name);
 
@@ -150,8 +156,8 @@ const run = async() => {
                 let filepath = path.join(dir, filename);
                 
                 await save_stream(filepath, stream);
-                db.data.downloadedActivities.push(activity.activityId);
-                await db.write();
+                downloadDb.data.downloadedActivities.push(activity.activityId);
+                await downloadDb.write();
             }
         }
     }
